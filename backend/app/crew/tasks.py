@@ -6,11 +6,7 @@ def build_tasks(
     workout_agent: Agent,
     nutrition_agent: Agent,
     safety_agent: Agent,
-    tracker_agent: Agent,
-    notification_agent: Agent,
     profile_summary: str,
-    user_id: int,
-    user_email: str,
 ) -> list[Task]:
 
     analyze_profile = Task(
@@ -59,25 +55,4 @@ def build_tasks(
         context=[analyze_profile, plan_workout],
     )
 
-    track_progress = Task(
-        description=(
-            f"The user's database ID is {user_id}. Use workout_history_query and "
-            "body_metric_history_query to pull their recent logs and summarize training trends "
-            "(volume, consistency, weight trend) in 3-5 sentences. If there is no history yet, say so."
-        ),
-        expected_output="A short progress summary grounded in actual queried log data (or a note that there is none yet).",
-        agent=tracker_agent,
-    )
-
-    send_notification = Task(
-        description=(
-            f"Compose a friendly summary of the final safety-approved workout plan, meal plan, and "
-            f"progress summary above. Send it via send_email_notification to {user_email} with subject "
-            "'Your updated fitness plan is ready'. Confirm whether the send succeeded."
-        ),
-        expected_output="Confirmation of whether the email notification was sent successfully.",
-        agent=notification_agent,
-        context=[check_safety, plan_nutrition, track_progress],
-    )
-
-    return [analyze_profile, plan_workout, plan_nutrition, check_safety, track_progress, send_notification]
+    return [analyze_profile, plan_workout, plan_nutrition, check_safety]

@@ -4,6 +4,7 @@ Six specialized agents, each with a distinct role and its own real tool(s).
 The CrewAI `Crew`/`Process` layer (see crew.py) acts as the orchestrator that
 sequences and routes work between them.
 """
+
 import os
 from crewai import Agent, LLM
 
@@ -11,15 +12,16 @@ from app.crew.tools import (
     ExerciseDBTool,
     NutritionAPITool,
     InjurySafetyRAGTool,
-    WorkoutHistoryTool,
-    BodyMetricHistoryTool,
-    SendNotificationTool,
 )
 
-# Point CrewAI's LLM at whichever provider you're using. Swap model= for
-# "claude-sonnet-5" (via litellm) or "gpt-4o" etc. Requires the matching
-# API key env var (ANTHROPIC_API_KEY / OPENAI_API_KEY).
-llm = LLM(model=os.getenv("CREW_LLM_MODEL", "gpt-4o-mini"), temperature=0.3)
+# Point CrewAI's LLM at whichever provider you're using. litellm (used under
+# the hood by crewai's LLM class) auto-detects the right API key based on the
+# model name prefix. Default here is Groq's free tier — requires GROQ_API_KEY.
+# Swap model= for "claude-sonnet-5" (needs ANTHROPIC_API_KEY) or "gpt-4o-mini"
+# (needs OPENAI_API_KEY) if you switch providers later.
+llm = LLM(
+    model=os.getenv("CREW_LLM_MODEL", "groq/llama-3.3-70b-versatile"), temperature=0.3
+)
 
 
 def build_profile_agent() -> Agent:
@@ -80,36 +82,6 @@ def build_safety_agent() -> Agent:
         ),
         llm=llm,
         tools=[InjurySafetyRAGTool()],
-        verbose=True,
-        allow_delegation=False,
-    )
-
-
-def build_progress_tracker_agent() -> Agent:
-    return Agent(
-        role="Progress Tracker",
-        goal="Analyze the user's historical workout and body-metric logs to summarize trends and adjust future intensity.",
-        backstory=(
-            "You are a data-driven coach who always pulls real historical logs from the database "
-            "before commenting on progress — you never guess at a user's history."
-        ),
-        llm=llm,
-        tools=[WorkoutHistoryTool(), BodyMetricHistoryTool()],
-        verbose=True,
-        allow_delegation=False,
-    )
-
-
-def build_notification_agent() -> Agent:
-    return Agent(
-        role="Notification Coordinator",
-        goal="Send the finalized plan and reminders to the user via email.",
-        backstory=(
-            "You package the final approved plan into a friendly summary and actually send it "
-            "using the notification tool — you don't just describe sending it."
-        ),
-        llm=llm,
-        tools=[SendNotificationTool()],
         verbose=True,
         allow_delegation=False,
     )

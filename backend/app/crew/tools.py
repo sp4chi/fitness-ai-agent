@@ -3,6 +3,7 @@ Real tool implementations used by the CrewAI agents.
 Each tool performs an actual external call (HTTP API, database, vector store,
 or email) rather than just letting an LLM "talk" about doing it.
 """
+
 import os
 import json
 import requests
@@ -18,21 +19,75 @@ from app.models import WorkoutLog, BodyMetricLog
 # 1. Exercise database lookup (Workout Planner agent)
 # ---------------------------------------------------------------------------
 class ExerciseSearchInput(BaseModel):
-    muscle_group: str = Field(..., description="Target muscle group, e.g. 'chest', 'quads', 'back'")
-    equipment: str = Field(default="body_weight", description="Available equipment, e.g. 'dumbbell', 'body_weight', 'barbell'")
+    muscle_group: str = Field(
+        ..., description="Target muscle group, e.g. 'chest', 'quads', 'back'"
+    )
+    equipment: str = Field(
+        default="body_weight",
+        description="Available equipment, e.g. 'dumbbell', 'body_weight', 'barbell'",
+    )
 
 
 class ExerciseDBTool(BaseTool):
     name: str = "exercise_database_lookup"
     description: str = (
         "Looks up real exercises for a given muscle group and equipment type from the "
-        "ExerciseDB API. Returns exercise name, target muscle, equipment, and instructions."
+        "ExerciseDB API. Returns exercise name, target muscle, equipment, and instructions. "
+        "muscle_group MUST be one of: abductors, abs, adductors, biceps, calves, "
+        "cardiovascular system, delts, forearms, glutes, hamstrings, lats, "
+        "levator scapulae, pectorals, quads, serratus anterior, spine, traps, "
+        "triceps, upper back. Use 'pectorals' for chest, 'quads' or 'hamstrings' for legs, "
+        "'lats' or 'upper back' for back, 'delts' for shoulders."
     )
     args_schema: type[BaseModel] = ExerciseSearchInput
 
+    # Common everyday terms mapped to ExerciseDB's exact accepted values
+    _ALIASES = {
+        "chest": "pectorals",
+        "arms": "biceps",
+        "legs": "quads",
+        "back": "lats",
+        "shoulders": "delts",
+        "core": "abs",
+        "cardio": "cardiovascular system",
+    }
+
+    _VALID_TARGETS = {
+        "abductors",
+        "abs",
+        "adductors",
+        "biceps",
+        "calves",
+        "cardiovascular system",
+        "delts",
+        "forearms",
+        "glutes",
+        "hamstrings",
+        "lats",
+        "levator scapulae",
+        "pectorals",
+        "quads",
+        "serratus anterior",
+        "spine",
+        "traps",
+        "triceps",
+        "upper back",
+    }
+
     def _run(self, muscle_group: str, equipment: str = "body_weight") -> str:
         api_key = os.getenv("EXERCISEDB_API_KEY")
-        url = f"https://exercisedb.p.rapidapi.com/exercises/target/{muscle_group}"
+        normalized = muscle_group.strip().lower()
+        normalized = self._ALIASES.get(normalized, normalized)
+
+        if normalized not in self._VALID_TARGETS:
+            return json.dumps(
+                {
+                    "error": f"'{muscle_group}' is not a valid ExerciseDB target.",
+                    "valid_targets": sorted(self._VALID_TARGETS),
+                }
+            )
+
+        url = f"https://exercisedb.p.rapidapi.com/exercises/target/{normalized}"
         headers = {
             "X-RapidAPI-Key": api_key or "",
             "X-RapidAPI-Host": "exercisedb.p.rapidapi.com",
@@ -49,11 +104,19 @@ class ExerciseDBTool(BaseTool):
                     "instructions": ex.get("instructions", [])[:2],
                 }
                 for ex in data
-                if equipment.lower() in ex.get("equipment", "").lower() or equipment == "any"
+                if equipment.lower() in ex.get("equipment", "").lower()
+                or equipment == "any"
             ][:8]
             if not filtered:
                 filtered = data[:5]
             return json.dumps(filtered)
+        except requests.exceptions.HTTPError as e:
+            return json.dumps(
+                {
+                    "error": f"ExerciseDB lookup failed: {e}",
+                    "response_body": resp.text[:300] if "resp" in dir() else None,
+                }
+            )
         except Exception as e:
             return json.dumps({"error": f"ExerciseDB lookup failed: {e}"})
 
@@ -62,9 +125,14 @@ class ExerciseDBTool(BaseTool):
 # 2. Nutrition / recipe API lookup (Nutrition agent)
 # ---------------------------------------------------------------------------
 class RecipeSearchInput(BaseModel):
-    diet: str = Field(..., description="Diet type, e.g. 'vegetarian', 'high-protein', 'balanced'")
+    diet: str = Field(
+        ..., description="Diet type, e.g. 'vegetarian', 'high-protein', 'balanced'"
+    )
     target_calories: int = Field(..., description="Target calories for this meal")
-    exclude: str = Field(default="", description="Comma-separated ingredients to exclude, e.g. 'peanuts,shellfish'")
+    exclude: str = Field(
+        default="",
+        description="Comma-separated ingredients to exclude, e.g. 'peanuts,shellfish'",
+    )
 
 
 class NutritionAPITool(BaseTool):
@@ -98,7 +166,13 @@ class NutritionAPITool(BaseTool):
                     for n in r.get("nutrition", {}).get("nutrients", [])
                     if n["name"] in ("Calories", "Protein", "Carbohydrates", "Fat")
                 }
-                simplified.append({"title": r.get("title"), "nutrients": nutrients, "sourceUrl": r.get("sourceUrl")})
+                simplified.append(
+                    {
+                        "title": r.get("title"),
+                        "nutrients": nutrients,
+                        "sourceUrl": r.get("sourceUrl"),
+                    }
+                )
             return json.dumps(simplified)
         except Exception as e:
             return json.dumps({"error": f"Nutrition lookup failed: {e}"})
@@ -108,7 +182,10 @@ class NutritionAPITool(BaseTool):
 # 3. RAG lookup over injury / exercise-safety documents (Safety Check agent)
 # ---------------------------------------------------------------------------
 class SafetyLookupInput(BaseModel):
-    query: str = Field(..., description="Description of exercise(s) or condition to check, e.g. 'squats with prior ACL surgery'")
+    query: str = Field(
+        ...,
+        description="Description of exercise(s) or condition to check, e.g. 'squats with prior ACL surgery'",
+    )
 
 
 class InjurySafetyRAGTool(BaseTool):
@@ -127,10 +204,16 @@ class InjurySafetyRAGTool(BaseTool):
         persist_dir = os.getenv("CHROMA_PERSIST_DIR", "./chroma_store")
         client = chromadb.PersistentClient(path=persist_dir)
         embed_fn = embedding_functions.DefaultEmbeddingFunction()
-        collection = client.get_or_create_collection(name="injury_safety_docs", embedding_function=embed_fn)
+        collection = client.get_or_create_collection(
+            name="injury_safety_docs", embedding_function=embed_fn
+        )
 
         if collection.count() == 0:
-            return json.dumps({"warning": "Knowledge base is empty. Run scripts/ingest_docs.py first."})
+            return json.dumps(
+                {
+                    "warning": "Knowledge base is empty. Run scripts/ingest_docs.py first."
+                }
+            )
 
         results = collection.query(query_texts=[query], n_results=4)
         passages = results.get("documents", [[]])[0]
@@ -192,7 +275,11 @@ class BodyMetricHistoryTool(BaseTool):
                 .all()
             )
             result = [
-                {"date": m.date.isoformat(), "weight_kg": m.weight_kg, "body_fat_pct": m.body_fat_pct}
+                {
+                    "date": m.date.isoformat(),
+                    "weight_kg": m.weight_kg,
+                    "body_fat_pct": m.body_fat_pct,
+                }
                 for m in logs
             ]
             return json.dumps(result)
@@ -218,7 +305,11 @@ class SendNotificationTool(BaseTool):
         api_key = os.getenv("RESEND_API_KEY")
         from_email = os.getenv("NOTIFICATION_FROM_EMAIL", "onboarding@resend.dev")
         if not api_key:
-            return json.dumps({"warning": "RESEND_API_KEY not set — email not actually sent (dry run)."})
+            return json.dumps(
+                {
+                    "warning": "RESEND_API_KEY not set — email not actually sent (dry run)."
+                }
+            )
         try:
             resp = requests.post(
                 "https://api.resend.com/emails",
@@ -235,6 +326,8 @@ class SendNotificationTool(BaseTool):
                 timeout=10,
             )
             resp.raise_for_status()
-            return json.dumps({"status_code": resp.status_code, "id": resp.json().get("id")})
+            return json.dumps(
+                {"status_code": resp.status_code, "id": resp.json().get("id")}
+            )
         except Exception as e:
             return json.dumps({"error": f"Notification send failed: {e}"})

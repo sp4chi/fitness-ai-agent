@@ -7,13 +7,13 @@ uvicorn
 # ---------------------------
 # CrewAI
 # ---------------------------
-crewai==1.5.0
+crewai>=1.0.0
 crewai-tools==1.5.0
 
 # ---------------------------
 # Database
 # ---------------------------
-sqlalchemy==2.0.35
+psycopg2-binary
 
 # ---------------------------
 # Authentication
@@ -56,3 +56,4 @@ resend==2.5.1
 # ---------------------------
 python-dateutil==2.9.0.post0
 bcrypt==4.0.1
+litellm
