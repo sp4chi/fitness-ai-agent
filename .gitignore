@@ -1,0 +1,15 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.env
+fitness.db
+chroma_store/
+
+# Node
+node_modules/
+.next/
+.env.local
+
+# Misc
+.DS_Store
