@@ -57,4 +57,3 @@ resend==2.5.1
 python-dateutil==2.9.0.post0
 bcrypt==4.0.1
 litellm
-PYTHON_VERSION = 3.11.15
