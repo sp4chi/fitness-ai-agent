@@ -1,4 +1,4 @@
-# AI Fitness Coach — Hackathon 2.0 submission
+# FitSense AI — Hackathon 2.0 submission
 
 A full-stack multi-agent fitness coaching app built with **CrewAI**, **FastAPI**, and **Next.js**.
 
@@ -6,7 +6,7 @@ A full-stack multi-agent fitness coaching app built with **CrewAI**, **FastAPI**
 
 Generates a personalized weekly workout + nutrition plan, safety-checks it against
 real injury-contraindication documents (RAG), reviews the user's logged training
-history, and emails the finished plan — using a crew of 6 collaborating agents that
+history, and emails the finished plan — using a crew of 4 collaborating agents that
 each call a real external tool (API, database, or vector store), not just LLM chat.
 
 ## Architecture
@@ -16,14 +16,12 @@ frontend/  → Next.js 14 app (auth, profile form, plan dashboard)
 backend/   → FastAPI + CrewAI (JWT auth, SQLite DB, 6-agent crew, Chroma RAG)
 ```
 
-| Agent | Tool it calls |
-|---|---|
-| Profile agent | (reasoning only — extracts constraints) |
-| Workout planner | ExerciseDB API |
-| Nutrition agent | Spoonacular API |
+| Agent              | Tool it calls                                      |
+| ------------------ | -------------------------------------------------- |
+| Profile agent      | (reasoning only — extracts constraints)            |
+| Workout planner    | ExerciseDB API                                     |
+| Nutrition agent    | Spoonacular API                                    |
 | Safety check agent | Chroma vector search over injury-safety docs (RAG) |
-| Progress tracker | SQLite query (workout & body-metric logs) |
-| Notification agent | SendGrid email API |
 
 The **Crew's sequential process** acts as the orchestrator, routing each task's
 output as context into the next agent.
@@ -31,6 +29,7 @@ output as context into the next agent.
 ## Quickstart
 
 **Backend**
+
 ```bash
 cd backend
 python -m venv venv && source venv/bin/activate
@@ -41,6 +40,7 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 **Frontend**
+
 ```bash
 cd frontend
 npm install
@@ -48,7 +48,7 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-Visit `http://localhost:3000`, sign up, fill in your profile, and click
+Visit `https://fitness-ai-agent-bice.vercel.app/`, sign up, fill in your profile, and click
 **Generate my plan**.
 
 ## Required API keys
@@ -56,10 +56,10 @@ Visit `http://localhost:3000`, sign up, fill in your profile, and click
 - An LLM key for CrewAI (OpenAI or Anthropic via litellm)
 - [ExerciseDB (RapidAPI)](https://rapidapi.com/justin-WFnsXH_t6/api/exercisedb)
 - [Spoonacular](https://spoonacular.com/food-api)
-- [SendGrid](https://sendgrid.com/) (optional — falls back to a dry-run log if unset)
+- [Resend](https://resend.com/) (optional — falls back to a dry-run log if unset)
 
 ## Deployment suggestion
 
 - Frontend → Vercel
-- Backend → Railway / Render (set env vars, run `uvicorn` as the start command)
+- Backend → Render (set env vars, run `uvicorn app.main:app --host 0.0.0.0 --port $PORT` as the start command)
 - Swap SQLite for Postgres in `DATABASE_URL` for production
