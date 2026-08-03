@@ -35,21 +35,26 @@ API docs available at `http://localhost:8000/docs`.
 | POST | `/auth/signup` | Create an account, returns JWT |
 | POST | `/auth/login` | Login (OAuth2 form), returns JWT |
 | GET/PUT | `/profile` | Read/update fitness profile |
-| POST | `/plan/generate` | Kicks off the 6-agent CrewAI crew, returns generated plan |
+| POST | `/plan/generate` | Dispatches CrewAI pipeline as a background job, returns `job_id` |
+| GET | `/plan/status/{job_id}` | Poll background job status (`pending`, `running`, `completed`, `failed`) |
 | GET | `/plan/history` | List previously generated plans |
 | POST | `/logs/workout` | Log a completed workout |
 | POST | `/logs/body-metric` | Log weight/body-fat |
 
 ## Agent pipeline (`app/crew/`)
 
-`crew.py` assembles and runs, in sequence:
+`crew.py` orchestrates a sequential hybrid pipeline:
 
-1. **Profile agent** — turns raw profile data into constraints
-2. **Workout planner agent** — calls the ExerciseDB API tool
-3. **Nutrition agent** — calls the Spoonacular API tool
-4. **Safety check agent** — RAG lookup against `data/safety_docs/` via Chroma
-5. **Progress tracker agent** — queries workout/body-metric history from the DB
-6. **Notification agent** — sends the final plan via SendGrid email
+1. **Profile agent** — turns raw profile data into structured constraints (LLM)
+2. **Workout planner agent** — calls the ExerciseDB API tool (LLM + RapidAPI)
+3. **Nutrition agent** — calls the Spoonacular API tool (LLM + Spoonacular)
+4. **Safety check agent** — RAG lookup against `data/safety_docs/` via Chroma (LLM + Chroma)
+5. **Progress tracker** — queries workout/body-metric history directly from SQL DB (Deterministic Python)
+6. **Notification sender** — sends the final plan via Resend API (Deterministic Python)
 
-Swap the LLM backing the agents by setting `CREW_LLM_MODEL` in `.env`
-(e.g. `gpt-4o-mini`, or `claude-sonnet-5` if you configure litellm for Anthropic).
+Swap the LLM backing the agents by setting `CREW_LLM_MODEL` in `.env`:
+- Groq: `groq/llama-3.1-8b-instant` *(default)* or `groq/llama-3.3-70b-versatile` (`GROQ_API_KEY`)
+- Google Gemini: `gemini/gemini-2.5-flash` or `gemini/gemini-3.1` (`GEMINI_API_KEY`)
+- OpenAI: `gpt-4o-mini` (`OPENAI_API_KEY`)
+- Anthropic: `claude-3-5-sonnet-20241022` (`ANTHROPIC_API_KEY`)
+

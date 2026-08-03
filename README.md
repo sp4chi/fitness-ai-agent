@@ -8,25 +8,27 @@ A full-stack multi-agent fitness coaching app built with **CrewAI**, **FastAPI**
 
 Generates a personalized weekly workout + nutrition plan, safety-checks it against
 real injury-contraindication documents (RAG), reviews the user's logged training
-history, and emails the finished plan — using a crew of 4 collaborating agents that
-each call a real external tool (API, database, or vector store), not just LLM chat.
+history, and emails the finished plan — using a collaborative multi-agent pipeline:
+- **4 LLM-driven agents** (Profile, Workout, Nutrition, Safety RAG)
+- **2 deterministic steps** (Progress trends SQL query & Resend email delivery)
 
 ## Architecture
 
 ```
-frontend/  → Next.js 14 app (auth, profile form, plan dashboard)
-backend/   → FastAPI + CrewAI (JWT auth, SQLite DB, 6-agent crew, Chroma RAG)
+frontend/  → Next.js 14 app (auth, profile form, dashboard with live polling)
+backend/   → FastAPI + CrewAI (JWT auth, SQLite DB, background tasks, Chroma RAG)
 ```
 
-| Agent              | Tool it calls                                      |
-| ------------------ | -------------------------------------------------- |
-| Profile agent      | (reasoning only — extracts constraints)            |
-| Workout planner    | ExerciseDB API                                     |
-| Nutrition agent    | Spoonacular API                                    |
-| Safety check agent | Chroma vector search over injury-safety docs (RAG) |
+| Agent / Step       | Action / Tool Called                               | Type |
+| ------------------ | -------------------------------------------------- | ---- |
+| Profile agent      | Reasoning only — extracts constraints              | LLM  |
+| Workout planner    | ExerciseDB API (RapidAPI)                          | LLM  |
+| Nutrition agent    | Spoonacular API                                    | LLM  |
+| Safety check agent | Chroma vector search over injury-safety docs (RAG) | LLM  |
+| Progress tracker   | SQL Database workout/body-metric history lookup    | Code |
+| Email notification | Resend API email delivery                          | Code |
 
-The **Crew's sequential process** acts as the orchestrator, routing each task's
-output as context into the next agent.
+The **Crew's sequential process** acts as the orchestrator, routing each task's output as context into the next agent.
 
 ## Quickstart
 
@@ -52,14 +54,21 @@ npm run dev
 
 Visit [fitness-ai-agent-bice.vercel.app](https://fitness-ai-agent-bice.vercel.app/), sign up, fill in your profile, and click **Generate my plan**.
 
-## Required API keys
+## LLM Providers & API Keys
 
-- An LLM key for CrewAI (OpenAI or Anthropic via litellm)
+Supports any LLM provider via CrewAI / LiteLLM:
+
+- **Groq** (`GROQ_API_KEY`): `groq/llama-3.1-8b-instant` *(default, 30k TPM)* or `groq/llama-3.3-70b-versatile`
+- **Google Gemini** (`GEMINI_API_KEY`): `gemini/gemini-2.5-flash`, `gemini/gemini-3.1`
+- **OpenAI** (`OPENAI_API_KEY`): `gpt-4o-mini`, `gpt-4o`
+- **Anthropic** (`ANTHROPIC_API_KEY`): `claude-3-5-sonnet-20241022`
+
+**External Tool APIs:**
 - [ExerciseDB (RapidAPI)](https://rapidapi.com/justin-WFnsXH_t6/api/exercisedb)
 - [Spoonacular](https://spoonacular.com/food-api)
 - [Resend](https://resend.com/) (optional — falls back to a dry-run log if unset)
 
-## Deployment suggestion
+## Deployment Suggestion
 
 - Frontend → Vercel
 - Backend → Render (set env vars, run `uvicorn app.main:app --host 0.0.0.0 --port $PORT` as the start command)
