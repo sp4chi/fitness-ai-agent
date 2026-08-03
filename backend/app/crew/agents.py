@@ -18,12 +18,10 @@ def _get_default_model() -> str:
     model = os.getenv("CREW_LLM_MODEL")
     if model:
         if "gemini" in model.lower():
-            # Standardize Gemini models to LiteLLM's registered endpoint
-            if any(ver in model for ver in ["1.5-flash", "2.5-flash", "3.1-flash"]):
-                return "gemini/gemini-1.5-flash-latest"
+            return "gemini/gemini-pro"
         return model
     if os.getenv("GEMINI_API_KEY"):
-        return "gemini/gemini-1.5-flash-latest"
+        return "gemini/gemini-pro"
     return "groq/llama-3.1-8b-instant"
 
 
