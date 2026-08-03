@@ -25,20 +25,18 @@ def _get_default_model() -> str:
     return "groq/llama-3.1-8b-instant"
 
 
-llm = LLM(
-    model=_get_default_model(), temperature=0.3, max_tokens=600
-)
+# Two LLM configs: the profile agent only extracts fields (small budget needed);
+# the other three plan/reason, so they get a bit more completion headroom.
+llm_extract = LLM(model=_get_default_model(), temperature=0.1, max_tokens=200)
+llm_plan = LLM(model=_get_default_model(), temperature=0.3, max_tokens=400)
 
 
 def build_profile_agent() -> Agent:
     return Agent(
-        role="Fitness Profile Analyst",
-        goal="Turn the user's raw profile data into a clear set of training and dietary constraints.",
-        backstory=(
-            "You are a certified intake specialist who reads client profiles and extracts the "
-            "hard constraints (injuries, equipment, time, dietary restrictions) other coaches must respect."
-        ),
-        llm=llm,
+        role="Profile Analyst",
+        goal="Extract training/diet constraints as JSON.",
+        backstory="Certified intake specialist. Output structured JSON only, no prose.",
+        llm=llm_extract,
         tools=[],
         verbose=True,
         allow_delegation=False,
@@ -48,12 +46,9 @@ def build_profile_agent() -> Agent:
 def build_workout_planner_agent() -> Agent:
     return Agent(
         role="Workout Planner",
-        goal="Design a realistic weekly workout plan using real exercise data for the user's goal and equipment.",
-        backstory=(
-            "You are a strength & conditioning coach. You always look up real exercises via the "
-            "exercise database tool rather than inventing exercise names or instructions."
-        ),
-        llm=llm,
+        goal="Build a weekly workout split using real exercises from the lookup tool.",
+        backstory="Strength coach. Always look up real exercises; never invent names.",
+        llm=llm_plan,
         tools=[ExerciseDBTool()],
         verbose=True,
         allow_delegation=False,
@@ -63,12 +58,9 @@ def build_workout_planner_agent() -> Agent:
 def build_nutrition_agent() -> Agent:
     return Agent(
         role="Nutrition Planner",
-        goal="Design a daily meal plan hitting the user's calorie/macro targets using real recipes.",
-        backstory=(
-            "You are a registered dietitian who always grounds meal suggestions in real recipes "
-            "pulled from the nutrition API, respecting dietary restrictions exactly."
-        ),
-        llm=llm,
+        goal="Build a daily meal plan hitting the given calorie/macro targets using real recipes.",
+        backstory="Dietitian. Always use the recipe lookup tool; respect exclusions exactly.",
+        llm=llm_plan,
         tools=[NutritionAPITool()],
         verbose=True,
         allow_delegation=False,
@@ -77,16 +69,10 @@ def build_nutrition_agent() -> Agent:
 
 def build_safety_agent() -> Agent:
     return Agent(
-        role="Injury Safety Reviewer",
-        goal=(
-            "Review the proposed workout plan against the user's stated injuries/conditions using "
-            "the injury-safety knowledge base, and flag or modify any risky exercises."
-        ),
-        backstory=(
-            "You are a physiotherapist. You NEVER approve a plan without checking it against the "
-            "injury-safety knowledge base tool first. You cite the specific guidance you found."
-        ),
-        llm=llm,
+        role="Safety Reviewer",
+        goal="Flag or fix any workout exercise unsafe for the stated injuries, using the safety tool.",
+        backstory="Physiotherapist. Always check the safety knowledge base before approving.",
+        llm=llm_plan,
         tools=[InjurySafetyRAGTool()],
         verbose=True,
         allow_delegation=False,

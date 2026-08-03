@@ -9,8 +9,36 @@ from app.crew.agents import (
     build_nutrition_agent,
     build_safety_agent,
 )
-from app.crew.tasks import build_tasks
-from app.crew.deterministic import compute_progress_summary, send_plan_email
+from app.crew.tasks import build_profile_task, build_downstream_tasks
+from app.crew.deterministic import (
+    compute_progress_summary,
+    compute_nutrition_targets,
+    send_plan_email,
+)
+
+
+def _run_with_retries(crew: Crew, max_attempts: int = 5):
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return crew.kickoff()
+        except Exception as e:
+            err_str = str(e).lower()
+            is_rate_limit = (
+                isinstance(e, RateLimitError)
+                or "rate_limit" in err_str
+                or "rate limit" in err_str
+                or "429" in err_str
+                or "tpm" in err_str
+                or "resource_exhausted" in err_str
+                or "quota" in err_str
+            )
+            if not is_rate_limit:
+                raise
+            if attempt == max_attempts:
+                raise RuntimeError(
+                    f"Crew run failed after {max_attempts} attempts due to rate/quota limiting: {e}"
+                )
+            time.sleep(30 * attempt)
 
 
 def _format_token_usage(crew: Crew) -> str:
@@ -71,55 +99,41 @@ def run_fitness_crew(profile_summary: str, user_id: int, user_email: str) -> str
     Retries the crew run on a transient LLM rate-limit error (e.g. Groq's
     free-tier tokens-per-minute cap), since that clears on its own within seconds.
     """
+    # --- Phase 1: profile extraction only (small, cheap, JSON output) ---
     profile_agent = build_profile_agent()
+    profile_task = build_profile_task(profile_agent, profile_summary)
+    profile_crew = Crew(
+        agents=[profile_agent],
+        tasks=[profile_task],
+        process=Process.sequential,
+        verbose=True,
+    )
+    profile_result = _run_with_retries(profile_crew)
+    constraints = profile_task.output.pydantic  # ProfileConstraints instance
+
+    # --- Deterministic glue: compute nutrition targets in plain Python via Mifflin-St Jeor ---
+    nutrition_targets = compute_nutrition_targets(constraints.model_dump() if hasattr(constraints, "model_dump") else {})
+
+    # --- Phase 2: workout -> nutrition -> safety, already knowing constraints/targets ---
     workout_agent = build_workout_planner_agent()
     nutrition_agent = build_nutrition_agent()
     safety_agent = build_safety_agent()
 
-    tasks = build_tasks(
-        profile_agent, workout_agent, nutrition_agent, safety_agent, profile_summary
+    downstream_tasks = build_downstream_tasks(
+        workout_agent, nutrition_agent, safety_agent, constraints, nutrition_targets
     )
-
-    crew = Crew(
-        agents=[profile_agent, workout_agent, nutrition_agent, safety_agent],
-        tasks=tasks,
+    downstream_crew = Crew(
+        agents=[workout_agent, nutrition_agent, safety_agent],
+        tasks=downstream_tasks,
         process=Process.sequential,
         task_callback=_task_delay_callback,
         verbose=True,
     )
+    plan_summary = str(_run_with_retries(downstream_crew))
 
-    max_attempts = 5
-    last_error: Exception | None = None
-    plan_summary = None
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            plan_summary = str(crew.kickoff())
-            break
-        except Exception as e:
-            err_str = str(e).lower()
-            is_rate_limit = (
-                isinstance(e, RateLimitError)
-                or "rate_limit" in err_str
-                or "rate limit" in err_str
-                or "429" in err_str
-                or "tpm" in err_str
-                or "resource_exhausted" in err_str
-                or "quota" in err_str
-            )
-            if is_rate_limit:
-                last_error = e
-                if attempt == max_attempts:
-                    raise RuntimeError(
-                        f"Crew run failed after {max_attempts} attempts due to LLM rate/quota limiting: {last_error}"
-                    )
-                # Wait longer (30s, 60s, 90s...) to allow Google AI Studio / Groq 60-second sliding quota windows to reset cleanly.
-                wait_seconds = 30 * attempt
-                time.sleep(wait_seconds)
-            else:
-                raise e
-
-    token_usage_debug = _format_token_usage(crew)
+    token_usage_debug = (
+        _format_token_usage(profile_crew) + "\n" + _format_token_usage(downstream_crew)
+    )
     progress_summary = compute_progress_summary(user_id)
     notification_result = send_plan_email(user_email, plan_summary, progress_summary)
 

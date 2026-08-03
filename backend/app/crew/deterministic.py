@@ -16,6 +16,54 @@ from app.crew.tools import (
     SendNotificationTool,
 )
 
+# Goal-based multiplier on a rough activity-adjusted TDEE. Replace with a real
+# Mifflin-St Jeor calc (needs age/height/sex) as soon as the profile collects those;
+# this is a deterministic placeholder so the LLM never has to guess a calorie number.
+_GOAL_MULTIPLIER = {"cut": 0.8, "lose": 0.8, "maintain": 1.0, "bulk": 1.15, "gain": 1.15}
+
+
+def compute_nutrition_targets(profile_data: dict | str) -> dict:
+    """
+    Pure Python — no LLM call. Calculates BMR via Mifflin-St Jeor, TDEE,
+    and target calories & macros (protein, carbs, fat).
+    """
+    if isinstance(profile_data, str):
+        try:
+            p = json.loads(profile_data)
+        except Exception:
+            p = {}
+    else:
+        p = profile_data or {}
+
+    age = int(p.get("age") or 30)
+    sex = str(p.get("sex") or "male").lower()
+    height_cm = float(p.get("height_cm") or 175)
+    weight_kg = float(p.get("weight_kg") or 70)
+    goal = str(p.get("goal") or "maintain").lower()
+
+    # Mifflin-St Jeor BMR calculation
+    bmr = 10 * weight_kg + 6.25 * height_cm - 5 * age + (5 if sex == "male" else -161)
+    tdee = bmr * 1.375  # Light/moderate activity factor
+
+    if "lose" in goal or "cut" in goal or "weight_loss" in goal:
+        kcal = round(tdee - 400)
+    elif "build" in goal or "gain" in goal or "muscle" in goal:
+        kcal = round(tdee + 300)
+    else:
+        kcal = round(tdee)
+
+    kcal = max(kcal, 1200)  # Safe lower bound
+    protein_g = round(weight_kg * 2.0)
+    fat_g = round((kcal * 0.25) / 9)
+    carbs_g = round(max(kcal - (protein_g * 4 + fat_g * 9), 0) / 4)
+
+    return {
+        "kcal": kcal,
+        "protein_g": protein_g,
+        "carbs_g": carbs_g,
+        "fat_g": fat_g,
+    }
+
 _workout_history_tool = WorkoutHistoryTool()
 _body_metric_tool = BodyMetricHistoryTool()
 _notification_tool = SendNotificationTool()

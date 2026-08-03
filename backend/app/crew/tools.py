@@ -31,13 +31,8 @@ class ExerciseSearchInput(BaseModel):
 class ExerciseDBTool(BaseTool):
     name: str = "exercise_database_lookup"
     description: str = (
-        "Looks up real exercises for a given muscle group and equipment type from the "
-        "ExerciseDB API. Returns exercise name, target muscle, equipment, and instructions. "
-        "muscle_group MUST be one of: abductors, abs, adductors, biceps, calves, "
-        "cardiovascular system, delts, forearms, glutes, hamstrings, lats, "
-        "levator scapulae, pectorals, quads, serratus anterior, spine, traps, "
-        "triceps, upper back. Use 'pectorals' for chest, 'quads' or 'hamstrings' for legs, "
-        "'lats' or 'upper back' for back, 'delts' for shoulders."
+        "Look up 1-3 real exercises for a muscle group + equipment (e.g. 'chest', "
+        "'dumbbell'). Everyday terms are auto-mapped; invalid ones return valid options."
     )
     args_schema: type[BaseModel] = ExerciseSearchInput
 
@@ -77,16 +72,50 @@ class ExerciseDBTool(BaseTool):
     def _run(self, muscle_group: str, equipment: str = "body_weight") -> str:
         api_key = os.getenv("EXERCISEDB_API_KEY")
         normalized = muscle_group.strip().lower()
+# Simple in-memory LRU cache for external API calls to avoid duplicate payload tokens
+_TOOL_CACHE: dict[str, str] = {}
+
+
+class ExerciseDBTool(BaseTool):
+    name: str = "exercise_database_lookup"
+    description: str = (
+        "Looks up real exercises for a target muscle group. "
+        "muscle_group MUST be one of: abductors, abs, adductors, biceps, calves, "
+        "cardiovascular system, delts, forearms, glutes, hamstrings, lats, "
+        "levator scapulae, pectorals, quads, serratus anterior, spine, traps, "
+        "triceps, upper back."
+    )
+    args_schema: type[BaseModel] = ExerciseSearchInput
+
+    _ALIASES = {
+        "chest": "pectorals",
+        "arms": "biceps",
+        "legs": "quads",
+        "back": "lats",
+        "shoulders": "delts",
+        "core": "abs",
+        "cardio": "cardiovascular system",
+    }
+
+    _VALID_TARGETS = {
+        "abductors", "abs", "adductors", "biceps", "calves",
+        "cardiovascular system", "delts", "forearms", "glutes",
+        "hamstrings", "lats", "levator scapulae", "pectorals",
+        "quads", "serratus anterior", "spine", "traps", "triceps", "upper back"
+    }
+
+    def _run(self, muscle_group: str, equipment: str = "body_weight") -> str:
+        normalized = muscle_group.strip().lower()
         normalized = self._ALIASES.get(normalized, normalized)
 
         if normalized not in self._VALID_TARGETS:
-            return json.dumps(
-                {
-                    "error": f"'{muscle_group}' is not a valid ExerciseDB target.",
-                    "valid_targets": sorted(self._VALID_TARGETS),
-                }
-            )
+            return json.dumps({"error": f"Invalid target '{muscle_group}'"}, separators=(",", ":"))
 
+        cache_key = f"ex_{normalized}_{equipment}"
+        if cache_key in _TOOL_CACHE:
+            return _TOOL_CACHE[cache_key]
+
+        api_key = os.getenv("EXERCISEDB_API_KEY")
         url = f"https://exercisedb.p.rapidapi.com/exercises/target/{normalized}"
         headers = {
             "X-RapidAPI-Key": api_key or "",
@@ -99,26 +128,23 @@ class ExerciseDBTool(BaseTool):
             filtered = [
                 {
                     "name": ex.get("name"),
-                    "equipment": ex.get("equipment"),
                     "target": ex.get("target"),
-                    "instructions": ex.get("instructions", [])[:1],
+                    "equipment": ex.get("equipment"),
                 }
                 for ex in data
                 if equipment.lower() in ex.get("equipment", "").lower()
                 or equipment == "any"
             ][:3]
             if not filtered:
-                filtered = data[:3]
-            return json.dumps(filtered)
-        except requests.exceptions.HTTPError as e:
-            return json.dumps(
-                {
-                    "error": f"ExerciseDB lookup failed: {e}",
-                    "response_body": resp.text[:300] if "resp" in dir() else None,
-                }
-            )
+                filtered = [
+                    {"name": ex.get("name"), "target": ex.get("target"), "equipment": ex.get("equipment")}
+                    for ex in data[:3]
+                ]
+            res_str = json.dumps(filtered, separators=(",", ":"))
+            _TOOL_CACHE[cache_key] = res_str
+            return res_str
         except Exception as e:
-            return json.dumps({"error": f"ExerciseDB lookup failed: {e}"})
+            return json.dumps({"error": f"Lookup failed: {e}"}, separators=(",", ":"))
 
 
 # ---------------------------------------------------------------------------
@@ -138,12 +164,16 @@ class RecipeSearchInput(BaseModel):
 class NutritionAPITool(BaseTool):
     name: str = "recipe_and_macro_lookup"
     description: str = (
-        "Searches the Spoonacular API for real recipes matching a diet type, calorie target, "
-        "and ingredient exclusions. Returns recipe name, calories, protein/carbs/fat, and a source link."
+        "Searches Spoonacular API for recipes matching diet and calorie targets. "
+        "Returns recipe name, calories, protein/carbs/fat."
     )
     args_schema: type[BaseModel] = RecipeSearchInput
 
     def _run(self, diet: str, target_calories: int, exclude: str = "") -> str:
+        cache_key = f"nut_{diet}_{target_calories}_{exclude}"
+        if cache_key in _TOOL_CACHE:
+            return _TOOL_CACHE[cache_key]
+
         api_key = os.getenv("SPOONACULAR_API_KEY")
         url = "https://api.spoonacular.com/recipes/complexSearch"
         params = {
@@ -159,23 +189,19 @@ class NutritionAPITool(BaseTool):
             resp = requests.get(url, params=params, timeout=10)
             resp.raise_for_status()
             data = resp.json().get("results", [])
+            wanted = {"Calories": "kcal", "Protein": "protein_g", "Carbohydrates": "carbs_g", "Fat": "fat_g"}
             simplified = []
-            for r in data:
-                nutrients = {
-                    n["name"]: n["amount"]
-                    for n in r.get("nutrition", {}).get("nutrients", [])
-                    if n["name"] in ("Calories", "Protein", "Carbohydrates", "Fat")
-                }
-                simplified.append(
-                    {
-                        "title": r.get("title"),
-                        "nutrients": nutrients,
-                        "sourceUrl": r.get("sourceUrl"),
-                    }
-                )
-            return json.dumps(simplified)
+            for r in data[:3]:
+                out = {"title": r.get("title")}
+                for n in r.get("nutrition", {}).get("nutrients", []):
+                    if n["name"] in wanted:
+                        out[wanted[n["name"]]] = round(n["amount"])
+                simplified.append(out)
+            res_str = json.dumps(simplified, separators=(",", ":"))
+            _TOOL_CACHE[cache_key] = res_str
+            return res_str
         except Exception as e:
-            return json.dumps({"error": f"Nutrition lookup failed: {e}"})
+            return json.dumps({"error": f"Nutrition lookup failed: {e}"}, separators=(",", ":"))
 
 
 # ---------------------------------------------------------------------------
@@ -184,20 +210,22 @@ class NutritionAPITool(BaseTool):
 class SafetyLookupInput(BaseModel):
     query: str = Field(
         ...,
-        description="Description of exercise(s) or condition to check, e.g. 'squats with prior ACL surgery'",
+        description="Exercise or condition to check, e.g. 'squats prior ACL surgery'",
     )
 
 
 class InjurySafetyRAGTool(BaseTool):
     name: str = "injury_safety_knowledge_search"
     description: str = (
-        "Searches a vector database of exercise-science and injury-contraindication documents "
-        "to check whether a proposed exercise is safe given a user's stated injury or condition. "
-        "Returns the most relevant guidance passages."
+        "Searches injury-contraindication knowledge base to verify exercise safety."
     )
     args_schema: type[BaseModel] = SafetyLookupInput
 
     def _run(self, query: str) -> str:
+        cache_key = f"rag_{query.strip().lower()}"
+        if cache_key in _TOOL_CACHE:
+            return _TOOL_CACHE[cache_key]
+
         import chromadb
         from chromadb.utils import embedding_functions
 
@@ -210,15 +238,13 @@ class InjurySafetyRAGTool(BaseTool):
         )
 
         if collection.count() == 0:
-            return json.dumps(
-                {
-                    "warning": "Knowledge base is empty. Run scripts/ingest_docs.py first."
-                }
-            )
+            return json.dumps({"warning": "Knowledge base empty"}, separators=(",", ":"))
 
-        results = collection.query(query_texts=[query], n_results=4)
-        passages = results.get("documents", [[]])[0]
-        return json.dumps({"query": query, "passages": passages})
+        results = collection.query(query_texts=[query], n_results=2)
+        passages = [p[:150] for p in results.get("documents", [[]])[0]]
+        res_str = json.dumps({"passages": passages}, separators=(",", ":"))
+        _TOOL_CACHE[cache_key] = res_str
+        return res_str
 
 
 # ---------------------------------------------------------------------------
