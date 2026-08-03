@@ -14,14 +14,16 @@ from app.crew.tools import (
     InjurySafetyRAGTool,
 )
 
-# Point CrewAI's LLM at whichever provider you're using. litellm (used under
-# the hood by crewai's LLM class) auto-detects the right API key based on the
-# model name prefix. Default here is Groq's llama-3.1-8b-instant (30k TPM limit)
-# to prevent rate limiting on multi-agent execution.
-# Swap model= for "groq/llama-3.3-70b-versatile", "claude-sonnet-5", or "gpt-4o-mini"
-# if you switch providers or upgrade tiers.
+def _get_default_model() -> str:
+    if os.getenv("CREW_LLM_MODEL"):
+        return os.environ["CREW_LLM_MODEL"]
+    if os.getenv("GEMINI_API_KEY"):
+        return "gemini/gemini-3.1-flash"
+    return "groq/llama-3.1-8b-instant"
+
+
 llm = LLM(
-    model=os.getenv("CREW_LLM_MODEL", "groq/llama-3.1-8b-instant"), temperature=0.3
+    model=_get_default_model(), temperature=0.3
 )
 
 
