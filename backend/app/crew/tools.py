@@ -201,7 +201,8 @@ class InjurySafetyRAGTool(BaseTool):
         import chromadb
         from chromadb.utils import embedding_functions
 
-        persist_dir = os.getenv("CHROMA_PERSIST_DIR", "./chroma_store")
+        default_persist_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "chroma_store"))
+        persist_dir = os.getenv("CHROMA_PERSIST_DIR", default_persist_dir)
         client = chromadb.PersistentClient(path=persist_dir)
         embed_fn = embedding_functions.DefaultEmbeddingFunction()
         collection = client.get_or_create_collection(

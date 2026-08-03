@@ -8,6 +8,7 @@ import {
   getProfile,
   updateProfile,
   generatePlan,
+  getPlanStatus,
   getPlanHistory,
 } from "@/lib/api";
 
@@ -36,6 +37,7 @@ export default function Dashboard() {
   const [profile, setProfile] = useState<Profile>({});
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [jobStatusText, setJobStatusText] = useState<string>("");
   const [plans, setPlans] = useState<PlanRecord[]>([]);
   const [latestResult, setLatestResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,15 +68,49 @@ export default function Dashboard() {
   async function handleGeneratePlan() {
     setGenerating(true);
     setError(null);
+    setJobStatusText("Submitting task to crew...");
     try {
-      const result = await generatePlan("");
-      setLatestResult(result.result);
-      const history = await getPlanHistory();
-      setPlans(history);
+      const resp = await generatePlan("");
+      if (resp.job_id) {
+        // Poll for background task completion
+        const jobId = resp.job_id;
+        const interval = setInterval(async () => {
+          try {
+            const statusData = await getPlanStatus(jobId);
+            if (statusData.status === "completed") {
+              clearInterval(interval);
+              setLatestResult(statusData.result);
+              const history = await getPlanHistory();
+              setPlans(history);
+              setGenerating(false);
+              setJobStatusText("");
+            } else if (statusData.status === "failed") {
+              clearInterval(interval);
+              setError(statusData.error || "Plan generation failed.");
+              setGenerating(false);
+              setJobStatusText("");
+            } else {
+              setJobStatusText(`Status: ${statusData.status} — multi-agent crew is processing...`);
+            }
+          } catch (pollErr) {
+            clearInterval(interval);
+            setError(pollErr instanceof Error ? pollErr.message : "Failed while polling status");
+            setGenerating(false);
+            setJobStatusText("");
+          }
+        }, 3000);
+      } else if (resp.result) {
+        // Fallback for synchronous API response
+        setLatestResult(resp.result);
+        const history = await getPlanHistory();
+        setPlans(history);
+        setGenerating(false);
+        setJobStatusText("");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate plan");
-    } finally {
       setGenerating(false);
+      setJobStatusText("");
     }
   }
 
@@ -146,8 +182,8 @@ export default function Dashboard() {
         </button>
         {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
         {generating && (
-          <p className="text-fog/60 text-sm mt-3">
-            Profile → workout planner → nutrition → safety review → progress check → email — this can take a minute.
+          <p className="text-fog/60 text-sm mt-3 font-mono">
+            {jobStatusText || "Profile → workout planner → nutrition → safety review → progress check → email — this can take a minute."}
           </p>
         )}
       </section>

@@ -65,6 +65,8 @@ export const updateProfile = (payload: Record<string, unknown>) =>
 export const generatePlan = (notes: string) =>
   request("/plan/generate", { method: "POST", body: JSON.stringify({ notes }) });
 
+export const getPlanStatus = (jobId: string) => request(`/plan/status/${jobId}`);
+
 export const getPlanHistory = () => request("/plan/history");
 
 export const logWorkout = (payload: Record<string, unknown>) =>

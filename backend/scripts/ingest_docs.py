@@ -12,8 +12,9 @@ import glob
 import chromadb
 from chromadb.utils import embedding_functions
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "safety_docs")
-PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_store")
+DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "safety_docs"))
+DEFAULT_PERSIST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "chroma_store"))
+PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", DEFAULT_PERSIST_DIR)
 
 
 def chunk_text(text: str, max_chars: int = 500) -> list[str]:

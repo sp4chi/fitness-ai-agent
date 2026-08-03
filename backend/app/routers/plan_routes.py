@@ -1,8 +1,10 @@
 import json
-from fastapi import APIRouter, Depends
+import uuid
+from typing import Dict, Any
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import User, Profile, Plan, WorkoutLog, BodyMetricLog
 from app.schemas import (
     ProfileUpdate,
@@ -16,6 +18,32 @@ from app.auth import get_current_user
 from app.crew.crew import run_fitness_crew
 
 router = APIRouter(tags=["fitness"])
+
+# In-memory store for background job status
+JOBS: Dict[str, Dict[str, Any]] = {}
+
+
+def _run_crew_job(job_id: str, profile_summary: str, user_id: int, user_email: str):
+    JOBS[job_id]["status"] = "running"
+    try:
+        result_text = run_fitness_crew(profile_summary, user_id, user_email)
+        
+        db = SessionLocal()
+        try:
+            plan = Plan(user_id=user_id, plan_type="combined", content_json=result_text)
+            db.add(plan)
+            db.commit()
+            db.refresh(plan)
+            plan_id = plan.id
+        finally:
+            db.close()
+            
+        JOBS[job_id]["status"] = "completed"
+        JOBS[job_id]["plan_id"] = plan_id
+        JOBS[job_id]["result"] = result_text
+    except Exception as e:
+        JOBS[job_id]["status"] = "failed"
+        JOBS[job_id]["error"] = str(e)
 
 
 @router.put("/profile", response_model=ProfileOut)
@@ -39,18 +67,21 @@ def get_profile(db: Session = Depends(get_db), current_user: User = Depends(get_
     return profile
 
 
-@router.post("/plan/generate")
+@router.post("/plan/generate", status_code=status.HTTP_202_ACCEPTED)
 def generate_plan(
     payload: PlanRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Kicks off the full CrewAI crew: Profile -> Workout -> Nutrition -> Safety -> Progress -> Notification.
-    This is a synchronous call for simplicity; for production, run it as a background task/queue
-    and poll for status instead of blocking the request.
+    Kicks off the multi-agent CrewAI crew as a background task.
+    Returns a job_id immediately so the client can poll /plan/status/{job_id}.
     """
     profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=400, detail="Please complete your profile before generating a plan.")
+
     profile_summary = json.dumps(
         {
             "age": profile.age,
@@ -66,14 +97,26 @@ def generate_plan(
         }
     )
 
-    result_text = run_fitness_crew(profile_summary, current_user.id, current_user.email)
+    job_id = str(uuid.uuid4())
+    JOBS[job_id] = {
+        "job_id": job_id,
+        "status": "pending",
+        "plan_id": None,
+        "result": None,
+        "error": None,
+    }
 
-    plan = Plan(user_id=current_user.id, plan_type="combined", content_json=result_text)
-    db.add(plan)
-    db.commit()
-    db.refresh(plan)
+    background_tasks.add_task(_run_crew_job, job_id, profile_summary, current_user.id, current_user.email)
 
-    return {"plan_id": plan.id, "result": result_text}
+    return {"job_id": job_id, "status": "pending"}
+
+
+@router.get("/plan/status/{job_id}")
+def get_plan_job_status(job_id: str, current_user: User = Depends(get_current_user)):
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 @router.get("/plan/history", response_model=list[PlanOut])

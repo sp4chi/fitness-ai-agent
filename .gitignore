@@ -13,3 +13,8 @@ node_modules/
 
 # Misc
 .DS_Store
+
+.mypy_cache
+
+.pylance
+.vscode
