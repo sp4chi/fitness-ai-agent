@@ -13,6 +13,46 @@ from app.crew.tasks import build_tasks
 from app.crew.deterministic import compute_progress_summary, send_plan_email
 
 
+def _format_token_usage(crew: Crew) -> str:
+    """Extracts and logs token usage metrics from CrewAI execution."""
+    try:
+        metrics = getattr(crew, "usage_metrics", None)
+        if not metrics:
+            return "Token usage metrics unavailable."
+
+        if hasattr(metrics, "model_dump"):
+            data = metrics.model_dump()
+        elif isinstance(metrics, dict):
+            data = metrics
+        else:
+            data = {
+                "total_tokens": getattr(metrics, "total_tokens", 0),
+                "prompt_tokens": getattr(metrics, "prompt_tokens", 0),
+                "completion_tokens": getattr(metrics, "completion_tokens", 0),
+                "successful_requests": getattr(metrics, "successful_requests", 0),
+            }
+
+        total = data.get("total_tokens", 0)
+        prompt = data.get("prompt_tokens", 0)
+        completion = data.get("completion_tokens", 0)
+        requests = data.get("successful_requests", 0)
+
+        usage_str = (
+            f"Total Tokens: {total:,} | "
+            f"Prompt (Input) Tokens: {prompt:,} | "
+            f"Completion (Output) Tokens: {completion:,} | "
+            f"Successful Requests: {requests}"
+        )
+        print(f"\n================ [TOKEN USAGE DEBUG] ================")
+        print(usage_str)
+        print("======================================================\n")
+        return usage_str
+    except Exception as err:
+        error_msg = f"Could not extract token usage: {err}"
+        print(f"[TOKEN USAGE DEBUG] {error_msg}")
+        return error_msg
+
+
 def run_fitness_crew(profile_summary: str, user_id: int, user_email: str) -> str:
     """
     Runs the 4 LLM-driven agents sequentially via CrewAI:
@@ -73,11 +113,13 @@ def run_fitness_crew(profile_summary: str, user_id: int, user_email: str) -> str
             else:
                 raise e
 
+    token_usage_debug = _format_token_usage(crew)
     progress_summary = compute_progress_summary(user_id)
     notification_result = send_plan_email(user_email, plan_summary, progress_summary)
 
     return (
         f"{plan_summary}\n\n"
+        f"--- Token Usage Debug ---\n{token_usage_debug}\n\n"
         f"--- Progress summary (deterministic) ---\n{progress_summary}\n\n"
         f"--- Notification result (deterministic) ---\n{notification_result}"
     )
