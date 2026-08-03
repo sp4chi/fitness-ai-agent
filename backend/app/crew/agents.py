@@ -26,7 +26,7 @@ def _get_default_model() -> str:
 
 
 llm = LLM(
-    model=_get_default_model(), temperature=0.3
+    model=_get_default_model(), temperature=0.3, max_tokens=600
 )
 
 

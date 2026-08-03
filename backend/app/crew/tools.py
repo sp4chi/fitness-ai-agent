@@ -101,14 +101,14 @@ class ExerciseDBTool(BaseTool):
                     "name": ex.get("name"),
                     "equipment": ex.get("equipment"),
                     "target": ex.get("target"),
-                    "instructions": ex.get("instructions", [])[:2],
+                    "instructions": ex.get("instructions", [])[:1],
                 }
                 for ex in data
                 if equipment.lower() in ex.get("equipment", "").lower()
                 or equipment == "any"
-            ][:8]
+            ][:3]
             if not filtered:
-                filtered = data[:5]
+                filtered = data[:3]
             return json.dumps(filtered)
         except requests.exceptions.HTTPError as e:
             return json.dumps(
@@ -153,7 +153,7 @@ class NutritionAPITool(BaseTool):
             "minCalories": max(target_calories - 150, 0),
             "excludeIngredients": exclude,
             "addRecipeNutrition": True,
-            "number": 5,
+            "number": 3,
         }
         try:
             resp = requests.get(url, params=params, timeout=10)

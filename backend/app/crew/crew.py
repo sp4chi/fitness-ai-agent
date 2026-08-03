@@ -53,6 +53,11 @@ def _format_token_usage(crew: Crew) -> str:
         return error_msg
 
 
+def _task_delay_callback(task_output):
+    """Pauses briefly between task executions to space out sliding-window TPM requests."""
+    time.sleep(6)
+
+
 def run_fitness_crew(profile_summary: str, user_id: int, user_email: str) -> str:
     """
     Runs the 4 LLM-driven agents sequentially via CrewAI:
@@ -79,6 +84,7 @@ def run_fitness_crew(profile_summary: str, user_id: int, user_email: str) -> str
         agents=[profile_agent, workout_agent, nutrition_agent, safety_agent],
         tasks=tasks,
         process=Process.sequential,
+        task_callback=_task_delay_callback,
         verbose=True,
     )
 

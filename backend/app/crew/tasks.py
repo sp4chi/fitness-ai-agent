@@ -11,48 +11,41 @@ def build_tasks(
 
     analyze_profile = Task(
         description=(
-            f"Here is the user's raw profile:\n{profile_summary}\n\n"
-            "Extract: (1) training goal, (2) equipment available, (3) days/week, "
-            "(4) any injuries/conditions to respect, (5) dietary restrictions. "
-            "Output a short structured constraint list other agents can use directly."
+            f"User profile:\n{profile_summary}\n\n"
+            "Extract: goal, equipment, schedule, injuries, diet restrictions. Keep concise."
         ),
-        expected_output="A bulleted constraint list covering goal, equipment, schedule, injuries, and diet.",
+        expected_output="Bullet list of constraints (under 100 words).",
         agent=profile_agent,
     )
 
     plan_workout = Task(
         description=(
-            "Using the constraints above, design a weekly workout split. For each training day, "
-            "use the exercise_database_lookup tool to pull 4-6 real exercises per muscle group "
-            "targeted that day. Include sets/reps appropriate to the user's experience level."
+            "Using the constraints, design a weekly workout split. Use exercise_database_lookup "
+            "to pull 3-4 real exercises per day with sets/reps. Be concise."
         ),
-        expected_output="A day-by-day workout plan (JSON-friendly) listing real exercise names, sets, and reps.",
+        expected_output="Day-by-day workout plan (under 250 words).",
         agent=workout_agent,
         context=[analyze_profile],
     )
 
     plan_nutrition = Task(
         description=(
-            "Using the constraints above, use the recipe_and_macro_lookup tool to build a daily "
-            "meal plan (breakfast/lunch/dinner/snack) that fits the user's calorie target and "
-            "dietary restrictions. Show calories and macros per meal from real tool results."
+            "Using the constraints, use recipe_and_macro_lookup to build a daily meal plan "
+            "(breakfast/lunch/dinner/snack). Show calories and macros per meal. Be concise."
         ),
-        expected_output="A daily meal plan (JSON-friendly) with real recipe names, calories, and macros.",
+        expected_output="Daily meal plan with recipe names, calories, and macros (under 250 words).",
         agent=nutrition_agent,
         context=[analyze_profile],
     )
 
     check_safety = Task(
         description=(
-            "Review the workout plan above against the user's stated injuries/conditions. "
-            "For any exercise that looks risky, call the injury_safety_knowledge_search tool "
-            "with a specific query (exercise + condition) and use the retrieved guidance to either "
-            "approve, modify, or replace that exercise. Produce a final, safety-reviewed workout plan "
-            "plus a short list of safety notes citing what you checked."
+            "Review the workout plan for injury risks. For any risky exercise, use "
+            "injury_safety_knowledge_search to modify or replace it. Output the final plan with short safety notes."
         ),
-        expected_output="A revised, safety-approved workout plan plus a 'Safety notes' section.",
+        expected_output="Revised safety-approved workout plan and short safety notes (under 250 words).",
         agent=safety_agent,
-        context=[analyze_profile, plan_workout],
+        context=[plan_workout],
     )
 
     return [analyze_profile, plan_workout, plan_nutrition, check_safety]
