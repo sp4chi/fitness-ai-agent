@@ -1,4 +1,4 @@
-# FitSense AI — Hackathon 2.0 submission
+# FitSense AI 
 
 A full-stack multi-agent fitness coaching app built with **CrewAI**, **FastAPI**, and **Next.js**.
 
