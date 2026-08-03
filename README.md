@@ -2,6 +2,8 @@
 
 A full-stack multi-agent fitness coaching app built with **CrewAI**, **FastAPI**, and **Next.js**.
 
+🚀 **Live Demo:** [https://fitness-ai-agent-bice.vercel.app/](https://fitness-ai-agent-bice.vercel.app/)
+
 ## What it does
 
 Generates a personalized weekly workout + nutrition plan, safety-checks it against
@@ -48,8 +50,7 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-Visit `https://fitness-ai-agent-bice.vercel.app/`, sign up, fill in your profile, and click
-**Generate my plan**.
+Visit [fitness-ai-agent-bice.vercel.app](https://fitness-ai-agent-bice.vercel.app/), sign up, fill in your profile, and click **Generate my plan**.
 
 ## Required API keys
 
