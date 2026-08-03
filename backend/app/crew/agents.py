@@ -15,8 +15,11 @@ from app.crew.tools import (
 )
 
 def _get_default_model() -> str:
-    if os.getenv("CREW_LLM_MODEL"):
-        return os.environ["CREW_LLM_MODEL"]
+    model = os.getenv("CREW_LLM_MODEL")
+    if model:
+        if "gemini-3.1" in model:
+            return "gemini/gemini-2.5-flash"
+        return model
     if os.getenv("GEMINI_API_KEY"):
         return "gemini/gemini-2.5-flash"
     return "groq/llama-3.1-8b-instant"
