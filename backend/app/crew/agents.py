@@ -25,10 +25,9 @@ def _get_default_model() -> str:
     return "groq/llama-3.1-8b-instant"
 
 
-# Two LLM configs: the profile agent only extracts fields (small budget needed);
-# the other three plan/reason, so they get a bit more completion headroom.
-llm_extract = LLM(model=_get_default_model(), temperature=0.1, max_tokens=200)
-llm_plan = LLM(model=_get_default_model(), temperature=0.3, max_tokens=400)
+# LLM configs with sufficient token headroom so JSON outputs are not truncated midway
+llm_extract = LLM(model=_get_default_model(), temperature=0.1, max_tokens=1000)
+llm_plan = LLM(model=_get_default_model(), temperature=0.3, max_tokens=1000)
 
 
 def build_profile_agent() -> Agent:
