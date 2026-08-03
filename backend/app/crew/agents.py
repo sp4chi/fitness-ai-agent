@@ -18,7 +18,7 @@ def _get_default_model() -> str:
     if os.getenv("CREW_LLM_MODEL"):
         return os.environ["CREW_LLM_MODEL"]
     if os.getenv("GEMINI_API_KEY"):
-        return "gemini/gemini-3.1-flash"
+        return "gemini/gemini-2.5-flash"
     return "groq/llama-3.1-8b-instant"
 
 
