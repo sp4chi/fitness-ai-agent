@@ -42,8 +42,7 @@ def run_fitness_crew(profile_summary: str, user_id: int, user_email: str) -> str
         verbose=True,
     )
 
-    max_attempts = 3
-    backoff_seconds = 15
+    max_attempts = 5
     last_error: Exception | None = None
     plan_summary = None
 
@@ -51,13 +50,20 @@ def run_fitness_crew(profile_summary: str, user_id: int, user_email: str) -> str
         try:
             plan_summary = str(crew.kickoff())
             break
-        except RateLimitError as e:
-            last_error = e
-            if attempt == max_attempts:
-                raise RuntimeError(
-                    f"Crew run failed after {max_attempts} attempts due to LLM rate limiting: {last_error}"
-                )
-            time.sleep(backoff_seconds)
+        except Exception as e:
+            err_str = str(e).lower()
+            is_rate_limit = isinstance(e, RateLimitError) or "rate_limit" in err_str or "rate limit" in err_str or "429" in err_str or "tpm" in err_str
+            if is_rate_limit:
+                last_error = e
+                if attempt == max_attempts:
+                    raise RuntimeError(
+                        f"Crew run failed after {max_attempts} attempts due to LLM rate limiting: {last_error}"
+                    )
+                # Groq TPM rate limits reset on a 60s sliding window. Wait longer on successive attempts.
+                wait_seconds = 20 * attempt
+                time.sleep(wait_seconds)
+            else:
+                raise e
 
     progress_summary = compute_progress_summary(user_id)
     notification_result = send_plan_email(user_email, plan_summary, progress_summary)

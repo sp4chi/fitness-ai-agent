@@ -16,11 +16,12 @@ from app.crew.tools import (
 
 # Point CrewAI's LLM at whichever provider you're using. litellm (used under
 # the hood by crewai's LLM class) auto-detects the right API key based on the
-# model name prefix. Default here is Groq's free tier — requires GROQ_API_KEY.
-# Swap model= for "claude-sonnet-5" (needs ANTHROPIC_API_KEY) or "gpt-4o-mini"
-# (needs OPENAI_API_KEY) if you switch providers later.
+# model name prefix. Default here is Groq's llama-3.1-8b-instant (30k TPM limit)
+# to prevent rate limiting on multi-agent execution.
+# Swap model= for "groq/llama-3.3-70b-versatile", "claude-sonnet-5", or "gpt-4o-mini"
+# if you switch providers or upgrade tiers.
 llm = LLM(
-    model=os.getenv("CREW_LLM_MODEL", "groq/llama-3.3-70b-versatile"), temperature=0.3
+    model=os.getenv("CREW_LLM_MODEL", "groq/llama-3.1-8b-instant"), temperature=0.3
 )
 
 
